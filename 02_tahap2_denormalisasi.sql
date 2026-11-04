@@ -1,5 +1,6 @@
 
-ALTER TABLE pelanggan ADD COLUMN total_belanja DECIMAL(15,2) DEFAULT 0;
+ALTER TABLE pelanggan 
+    ADD COLUMN total_belanja DECIMAL(15,2) DEFAULT 0;
 UPDATE pelanggan p
 SET p.total_belanja = COALESCE((
     SELECT SUM(d.jumlah * d.harga_satuan)
