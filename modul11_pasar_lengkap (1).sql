@@ -1,62 +1,24 @@
--- =====================================================================
--- Praktikum Modul 11 - Praktik Basis Data (RPL24108)
--- Kasus : Digitalisasi Pasar Tradisional (lanjutan Modul 10)
--- DBMS  : MySQL 8.x (diuji untuk sintaks MySQL 8.4 / MariaDB)
---
--- Skema dasar sama dengan Modul 10:
---   pasar (1) --- (N) kios (1) --- (N) barang (1) --- (N) stok
---   pelaku_pasar  <- supertype
---        +-- pedagang  (id_pelaku, id_kios, kategori_usaha)
---        +-- pembeli   (id_pelaku)
---   pembeli, pedagang --- (N) transaksi (1) --- (N) detail_transaksi --- barang
---   (9 tabel, sama dengan Modul 10)
---
--- Tambahan Modul 11:
---   * kolom barang.spesifikasi (JSON)          : atribut berbeda per jenis barang
---   * kolom kios.info_tambahan (JSON)          : jam operasional, fasilitas, promosi kios
---   * kolom transaksi.detail_pembayaran (JSON) : atribut berbeda per metode pembayaran
---   * view v_barang_objek    : pemetaan barang ke kelas objek
---   * view v_pedagang_objek  : pemetaan pewarisan pelaku_pasar -> pedagang
---
--- Model objek (konseptual):
---
---   Barang                                   <- kelas induk
---   ------------------------------------
---   id_barang, nama_barang, harga_satuan, satuan, stok_min
---   ------------------------------------
---   hitungDiskon(), tampilkanInformasi(), ubahHarga(), cekStokMenipis()
---        |
---        +-- BarangSegar    (kategori Sayuran, Bumbu)  : asal, organik, kesegaran, ...
---        +-- BarangKemasan  (kategori Sembako)         : merek, kemasan, halal, kadaluarsa
---        +-- BarangHewani   (kategori Ikan, Daging)    : jenis, kondisi, halal, potongan[]
---
---   PelakuPasar                              <- kelas induk (tabel pelaku_pasar)
---        +-- Pedagang   (tabel pedagang : id_kios, kategori_usaha)
---        +-- Pembeli    (tabel pembeli)
---
--- PENTING: Modul 10 memuat data massal (1 juta transaksi). Jalankan skrip ini
--- pada database BARU (praktikum_modul11_pasar), bukan pada database Modul 10
--- yang sudah berisi data massal, supaya query tetap cepat.
---
--- Cara pakai:
---   * Database baru      : jalankan seluruh file dari atas.
---   * Melanjutkan DB Modul 10 (praktikum_modul10_pasar): lewati bagian 01 dan
---     02, jalankan USE praktikum_modul10_pasar; lalu mulai dari bagian 03.
--- =====================================================================
+-- Fasilitas pengelolaan transaksi
+Cek pengaturan transaksinya:
+SELECT @@autocommit;
+SELECT @@transaction_isolation;
+buktikan dengan percobaan
+START TRANSACTION;
+UPDATE stok SET stok_akhir = stok_akhir - 5
+WHERE id_barang = 1 AND tanggal = '2026-11-10';
+SELECT * FROM stok WHERE id_barang = 1;   -- stok_akhir berkurang 5
+ROLLBACK;
+SELECT * FROM stok WHERE id_barang = 1;   -- kembali seperti semula
 
-
--- =====================================================================
 -- 01. DATABASE
--- =====================================================================
+
 DROP DATABASE IF EXISTS praktikum_modul11_pasar;
 CREATE DATABASE praktikum_modul11_pasar
     CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 USE praktikum_modul11_pasar;
 
+-- 02. TABEL DASAR 
 
--- =====================================================================
--- 02. TABEL DASAR (struktur dan data inti dari Modul 10)
--- =====================================================================
 CREATE TABLE pasar (
     id_pasar   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     nama_pasar VARCHAR(100) NOT NULL UNIQUE,
@@ -200,13 +162,11 @@ INSERT INTO detail_transaksi (id_detail, id_transaksi, id_barang, jumlah, harga_
 
 -- =====================================================================
 -- 03. TAMBAH KOLOM JSON PADA TABEL BARANG
---     Atribut yang sama untuk semua barang (harga, satuan, stok_min) tetap
---     berupa kolom. Atribut yang berbeda per jenis barang masuk ke JSON.
 -- =====================================================================
 ALTER TABLE barang
     ADD COLUMN spesifikasi JSON NULL AFTER stok_min;
 
--- Isi spesifikasi untuk 4 barang dari Modul 10 (atribut tiap barang berbeda)
+
 UPDATE barang SET spesifikasi = '{
     "asal": "Dusun Sari",
     "organik": true,
@@ -233,7 +193,7 @@ UPDATE barang SET spesifikasi = '{
     "ukuran_umbi": "sedang"
 }' WHERE id_barang = 4;
 
--- Kios dan pedagang baru (ikan dan daging) supaya ada jenis barang lain
+
 INSERT INTO kios (id_pasar, nama_kios, ukuran)
 VALUES (1, 'Kios Ikan dan Ayam', '3x2 m');
 
@@ -247,51 +207,9 @@ VALUES (
     'Ikan dan Daging'
 );
 
--- Barang baru dengan atribut JSON berbeda
-INSERT INTO barang (id_kios, nama_barang, kategori, harga_satuan, satuan, stok_min, spesifikasi)
-VALUES (
-    (SELECT id_kios FROM kios WHERE nama_kios = 'Kios Ikan dan Ayam'),
-    'Ikan Lele', 'Ikan', 28000.00, 'kg', 10,
-    '{
-        "jenis": "ikan air tawar",
-        "kondisi": "segar",
-        "bisa_dibersihkan": true,
-        "asal": "Kolam Ngawi"
-    }'
-);
-
-INSERT INTO barang (id_kios, nama_barang, kategori, harga_satuan, satuan, stok_min, spesifikasi)
-VALUES (
-    (SELECT id_kios FROM kios WHERE nama_kios = 'Kios Ikan dan Ayam'),
-    'Ayam Potong', 'Daging', 38000.00, 'kg', 10,
-    '{
-        "jenis": "ayam broiler",
-        "kondisi": "segar",
-        "halal": true,
-        "potongan": [
-            "dada",
-            "paha",
-            "sayap"
-        ]
-    }'
-);
-
-INSERT INTO barang (id_kios, nama_barang, kategori, harga_satuan, satuan, stok_min, spesifikasi)
-VALUES (
-    3, 'Cabai Rawit Merah', 'Bumbu', 45000.00, 'kg', 5,
-    '{
-        "asal": "Kediri",
-        "organik": false,
-        "tingkat_pedas": "tinggi"
-    }'
-);
-
-SELECT id_barang, nama_barang, kategori, harga_satuan, satuan, spesifikasi
-FROM barang;
-
 
 -- ---------------------------------------------------------------------
--- 03b. KOLOM JSON PADA TABEL KIOS (KF-06 jam operasional, KF-07 promosi)
+-- 03b. KOLOM JSON PADA TABEL KIOS 
 -- ---------------------------------------------------------------------
 ALTER TABLE kios
     ADD COLUMN info_tambahan JSON NULL AFTER ukuran;
@@ -367,11 +285,6 @@ SELECT nama_barang, kategori
 FROM barang
 WHERE JSON_CONTAINS(spesifikasi, 'true', '$.halal');
 
--- Pencarian di dalam array: ayam yang tersedia potongan paha
-SELECT nama_barang, harga_satuan
-FROM barang
-WHERE JSON_CONTAINS(spesifikasi, '"paha"', '$.potongan');
-
 -- 4.3 Mengubah atribut JSON (kesegaran bayam berubah)
 UPDATE barang
 SET spesifikasi = JSON_SET(spesifikasi, '$.kesegaran', 'panen kemarin')
@@ -397,7 +310,20 @@ WHERE nama_barang = 'Wortel';
 
 SELECT nama_barang, spesifikasi FROM barang;
 
--- 4.6 Fungsi JSON lainnya
+4.6 Menghapus atribut JSON (promo berakhir)
+    SELECT
+    nama_barang,
+    harga_satuan,
+    spesifikasi
+FROM barang
+WHERE JSON_UNQUOTE(
+    JSON_EXTRACT(
+        spesifikasi,
+        '$.asal'
+    )
+) = 'Magetan';
+
+-- 4.7 Fungsi JSON lainnya
 SELECT JSON_OBJECT(
     'nama', 'Pak Joko',
     'kios', 'Kios Sayur Segar',
@@ -412,7 +338,7 @@ SELECT nama_barang, JSON_LENGTH(spesifikasi) AS jumlah_atribut
 FROM barang;
 
 
--- 4.7 JSON pada tabel kios
+-- 4.8 JSON pada tabel kios
 -- Jam operasional setiap kios
 SELECT nama_kios,
        JSON_UNQUOTE(JSON_EXTRACT(info_tambahan, '$.jam_operasional')) AS jam_operasional
@@ -439,7 +365,7 @@ WHERE nama_kios = 'Kios Beras Makmur';
 
 SELECT nama_kios, info_tambahan FROM kios;
 
--- 4.8 JSON pada tabel transaksi
+-- 4.9 JSON pada tabel transaksi
 -- Pembayaran QRIS yang berhasil
 SELECT id_transaksi, total_bayar
 FROM transaksi
@@ -461,160 +387,3 @@ SET detail_pembayaran = JSON_REMOVE(detail_pembayaran, '$.catatan')
 WHERE id_transaksi = 102;
 
 SELECT id_transaksi, detail_pembayaran FROM transaksi;
-
-
--- =====================================================================
--- 05. PEMODELAN OBJEK DI DBMS RELASIONAL
--- =====================================================================
-
--- 5.1 Barang -> kelas objek.
---     Kolom kategori berfungsi sebagai penentu kelas turunan (discriminator),
---     atribut khusus kelas turunan disimpan di kolom JSON.
-CREATE VIEW v_barang_objek AS
-SELECT
-    b.id_barang,
-    b.nama_barang,
-    CASE
-        WHEN b.kategori IN ('Sayuran', 'Bumbu') THEN 'BarangSegar'
-        WHEN b.kategori = 'Sembako'             THEN 'BarangKemasan'
-        WHEN b.kategori IN ('Ikan', 'Daging')   THEN 'BarangHewani'
-        ELSE 'Barang'
-    END AS kelas_objek,
-    b.harga_satuan,
-    b.satuan,
-    b.spesifikasi
-FROM barang b;
-
-SELECT id_barang, nama_barang, harga_satuan, spesifikasi
-FROM v_barang_objek
-WHERE kelas_objek = 'BarangSegar';
-
-SELECT id_barang, nama_barang, harga_satuan, spesifikasi
-FROM v_barang_objek
-WHERE kelas_objek = 'BarangKemasan';
-
-SELECT id_barang, nama_barang, harga_satuan, spesifikasi
-FROM v_barang_objek
-WHERE kelas_objek = 'BarangHewani';
-
--- 5.2 Pewarisan PelakuPasar -> Pedagang pada Modul 10 (class table inheritance):
---     atribut umum ada di pelaku_pasar, atribut khusus ada di pedagang.
-CREATE VIEW v_pedagang_objek AS
-SELECT
-    pl.id_pelaku,
-    pl.nama,
-    pl.no_hp,
-    'Pedagang'   AS kelas_objek,
-    pd.kategori_usaha,
-    k.nama_kios,
-    ps.nama_pasar
-FROM pelaku_pasar pl
-JOIN pedagang pd ON pd.id_pelaku = pl.id_pelaku
-JOIN kios k      ON k.id_kios    = pd.id_kios
-JOIN pasar ps    ON ps.id_pasar  = k.id_pasar;
-
-SELECT * FROM v_pedagang_objek;
-
--- 5.3 Menggabungkan data relasional dan JSON
-SELECT
-    b.id_barang,
-    b.nama_barang,
-    k.nama_kios,
-    ps.nama_pasar,
-    b.harga_satuan,
-    b.satuan,
-    JSON_EXTRACT(b.spesifikasi, '$.asal') AS asal
-FROM barang b
-JOIN kios k   ON k.id_kios   = b.id_kios
-JOIN pasar ps ON ps.id_pasar = k.id_pasar;
-
--- 5.4 Barang yang stoknya menipis pada tanggal terakhir, lengkap dengan JSON
-SELECT
-    b.nama_barang,
-    s.tanggal,
-    s.stok_akhir,
-    b.stok_min,
-    JSON_EXTRACT(b.spesifikasi, '$.asal') AS asal
-FROM barang b
-JOIN stok s ON s.id_barang = b.id_barang
-WHERE s.tanggal = (SELECT MAX(s2.tanggal) FROM stok s2 WHERE s2.id_barang = b.id_barang)
-  AND s.stok_akhir < b.stok_min;
-
--- 5.5 Rincian transaksi beserta atribut JSON barang
-SELECT
-    t.id_transaksi,
-    t.tanggal,
-    pd.nama AS nama_pedagang,
-    pb.nama AS nama_pembeli,
-    b.nama_barang,
-    d.jumlah,
-    d.subtotal,
-    JSON_EXTRACT(b.spesifikasi, '$.asal') AS asal
-FROM transaksi t
-JOIN pelaku_pasar pd    ON pd.id_pelaku = t.id_pedagang
-JOIN pelaku_pasar pb    ON pb.id_pelaku = t.id_pembeli
-JOIN detail_transaksi d ON d.id_transaksi = t.id_transaksi
-JOIN barang b           ON b.id_barang = d.id_barang
-ORDER BY t.id_transaksi, b.nama_barang;
-
--- 5.6 Penjualan barang organik (filter JSON + agregasi transaksi)
-SELECT
-    b.nama_barang,
-    SUM(d.jumlah)   AS total_terjual,
-    SUM(d.subtotal) AS total_rupiah
-FROM detail_transaksi d
-JOIN barang b ON b.id_barang = d.id_barang
-WHERE JSON_CONTAINS(b.spesifikasi, 'true', '$.organik')
-GROUP BY b.id_barang, b.nama_barang;
-
--- 5.7 Pendapatan per kelas objek (memakai view v_barang_objek)
-SELECT
-    v.kelas_objek,
-    SUM(d.jumlah)   AS total_terjual,
-    SUM(d.subtotal) AS total_rupiah
-FROM detail_transaksi d
-JOIN v_barang_objek v ON v.id_barang = d.id_barang
-GROUP BY v.kelas_objek;
-
-
--- =====================================================================
--- 06. BONUS: TRANSAKSI (ACID pada InnoDB)
---     Pesanan baru (transaksi + detail + pengurangan stok) dibatalkan
---     seluruhnya dengan ROLLBACK. Jalankan blok ini dalam SATU kali Go.
--- =====================================================================
-START TRANSACTION;
-
-INSERT INTO transaksi (id_transaksi, tanggal, metode_pembayaran, total_bayar, id_pembeli, id_pedagang)
-VALUES (103, '2026-11-11 08:00:00', 'qris', 15000, 3, 1);
-
-INSERT INTO detail_transaksi (id_transaksi, id_barang, jumlah, harga_satuan, subtotal)
-VALUES (103, 1, 5, 3000, 15000);
-
-UPDATE stok
-SET stok_keluar = stok_keluar + 5,
-    stok_akhir  = stok_akhir - 5
-WHERE id_barang = 1 AND tanggal = '2026-11-10';
-
-SELECT id_barang, tanggal, stok_keluar, stok_akhir
-FROM stok WHERE id_barang = 1 AND tanggal = '2026-11-10';   -- stok_akhir 20
-SELECT COUNT(*) AS jumlah_transaksi FROM transaksi;          -- 3
-
-ROLLBACK;
-
-SELECT id_barang, tanggal, stok_keluar, stok_akhir
-FROM stok WHERE id_barang = 1 AND tanggal = '2026-11-10';   -- kembali 25
-SELECT COUNT(*) AS jumlah_transaksi FROM transaksi;          -- kembali 2
-
-
--- =====================================================================
--- 07. BONUS: INDEKS PADA ATRIBUT JSON (generated column)
---     Pencarian berdasarkan asal barang menjadi lebih cepat.
--- =====================================================================
-ALTER TABLE barang
-    ADD COLUMN asal_barang VARCHAR(100)
-        GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(spesifikasi, '$.asal'))) VIRTUAL,
-    ADD INDEX idx_barang_asal (asal_barang);
-
-SELECT nama_barang, asal_barang
-FROM barang
-WHERE asal_barang = 'Kediri';
