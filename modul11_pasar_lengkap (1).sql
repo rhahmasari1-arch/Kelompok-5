@@ -1,3 +1,13 @@
+-- Memeriksa storage engine InnoDB
+SHOW ENGINES;
+
+-- Memeriksa dukungan fungsi JSON
+SELECT
+    JSON_VALID('{"nama":"Budi"}') AS json_valid,
+    JSON_EXTRACT(
+        '{"nama":"Budi"}',
+        '$.nama'
+    ) AS nama;
 -- Fasilitas pengelolaan transaksi
 Cek pengaturan transaksinya:
 SELECT @@autocommit;
