@@ -1,3 +1,4 @@
+----script migrasi dan eksekusi query
 USE transport_db;
 CREATE TABLE routes (
   route_id INT PRIMARY KEY,
