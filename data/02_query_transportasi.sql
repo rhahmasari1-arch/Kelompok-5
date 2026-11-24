@@ -1,7 +1,9 @@
+----query pengujian
 SELECT t.trip_id, t.started_at, r.route_name
 FROM trips AS t JOIN routes AS r ON r.route_id = t.route_id
 WHERE t.route_id = 12 AND t.started_at >= '2026-11-01';
 
+----perbandingan 2 rencana pada data
 -- Rencana 1: join dahulu, seleksi kemudian
 SELECT j.trip_id, j.started_at, j.route_name
 FROM (
@@ -22,6 +24,7 @@ FROM (
 ) AS s
 JOIN routes AS r ON r.route_id = s.route_id;
 
+----inspeksi execution plan pada TiDB
 ANALYZE TABLE routes, trips;
 
 EXPLAIN
